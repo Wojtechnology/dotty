@@ -395,6 +395,10 @@ class Definitions {
   lazy val ArrayModuleType = ctx.requiredModuleRef("scala.Array")
   def ArrayModule(implicit ctx: Context) = ArrayModuleType.symbol.moduleClass.asClass
 
+  lazy val RangeType: TypeRef = ctx.requiredClassRef("scala.collection.immutable.Range")
+  def RangeClass(implicit ctx: Context) = RangeType.symbol.asClass
+    lazy val Range_foreachR = RangeClass.requiredMethodRef(nme.foreach)
+    def Range_foreach(implicit ctx: Context) = Range_foreachR.symbol
 
   lazy val UnitType: TypeRef = valueTypeRef("scala.Unit", BoxedUnitType, java.lang.Void.TYPE, UnitEnc)
   def UnitClass(implicit ctx: Context) = UnitType.symbol.asClass

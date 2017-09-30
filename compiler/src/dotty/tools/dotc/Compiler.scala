@@ -77,6 +77,7 @@ class Compiler {
            new AugmentScala2Traits, // Expand traits defined in Scala 2.x to simulate old-style rewritings
            new ResolveSuper,        // Implement super accessors and add forwarders to trait methods
            new Simplify,            // Perform local optimizations, simplified versions of what linker does.
+           new ForOpt,              // NOTE: Experimental
            new PrimitiveForwarders, // Add forwarders to trait methods that have a mismatch between generic and primitives
            new FunctionXXLForwarders, // Add forwarders for FunctionXXL apply method
            new ArrayConstructors),  // Intercept creation of (non-generic) arrays and intrinsify.
