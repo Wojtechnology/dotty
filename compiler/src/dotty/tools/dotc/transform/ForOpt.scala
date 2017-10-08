@@ -4,7 +4,6 @@ import dotty.tools.dotc.ast.tpd
 import dotty.tools.dotc.core.Contexts._
 import dotty.tools.dotc.core.Flags._
 import dotty.tools.dotc.core.Symbols._
-import dotty.tools.dotc.core.Types.MethodType
 import dotty.tools.dotc.transform.TreeTransforms.{MiniPhaseTransform, TransformerInfo}
 
 import scala.collection.immutable
@@ -13,61 +12,90 @@ import scala.collection.mutable
 /**
   * Optimizes a subset of for-loops.
   */
-class ForOpt extends MiniPhaseTransform {
+object ForOpt {
   import tpd._
-  override def phaseName: String = "forOpt"
 
-  // Map of classes that contain methods we will be specializing
-  private def clsMethods(implicit ctx: Context) = immutable.Map(
-    defn.RangeClass -> immutable.Set(defn.Range_foreach)
-  )
-  // TODO: how would I make this a lazy val (implicit context doesn't allow me to)
-  private def methods(implicit ctx: Context) = clsMethods.flatMap(_._2).toSet
+  // List of classes that contain methods in `methods`. Only templates of this class will have
+  // proxy methods rewritten.
+  private def classes(implicit ctx: Context) = immutable.Set(defn.RangeClass)
 
-  private val foundMethods = mutable.Set[Symbol]()
+  // List of methods for which we want to create proxy methods
+  private def methods(implicit ctx: Context) = immutable.Set(defn.Range_foreach)
 
-  override def transformApply(tree: Apply)(implicit ctx: Context, info: TransformerInfo): Tree = {
-    if (methods contains tree.symbol) foundMethods.add(tree.symbol)
-    tree
+  // Contains map from the method symbol to all proxy symbols
+  private val methToProxies = new mutable.HashMap[Symbol, mutable.Set[TermSymbol]]() {
+    override def default(key: Symbol) = mutable.Set()
   }
 
-  override def transformDefDef(tree: DefDef)(implicit ctx: Context, info: TransformerInfo): Tree = {
-    tree
-  }
+  // Appended to end of proxy methods to guarantee uniqueness
+  private var counter: Int = 0
 
-  private def proxyMethod(target: DefDef)(implicit ctx: Context): DefDef = {
-    val oldSym = target.symbol
-    val proxySym = ctx.newSymbol(
-      oldSym.owner,
-      target.name ++ "$proxy",
-      Synthetic | Method,
-      // Q: What does "widen" and "unstable" mean?
-      MethodType(Nil, target.tpe.widenIfUnstable),
-      coord = target.pos
-    )
-    val tparamSyms: List[TypeSymbol] = target.tparams.map(_.changeOwner(oldSym, proxySym).symbol.asType)
-    val vparamss: List[List[ValDef]] = target.vparamss.map(_.map(_.changeOwner(oldSym, proxySym)))
-    val vparamSymss: List[List[TermSymbol]] = vparamss.map(_.map(_.symbol.asTerm))
+  class ForOptCollect extends MiniPhaseTransform {
+    override def phaseName: String = "forOptCollect"
 
-    val tree = DefDef(proxySym, target.tparams.map(_.symbol.asType),
-      target.vparamss.map(_.map(_.symbol.asTerm)), target.tpe.widenIfUnstable,
-      ref(target.symbol).appliedToArgss(vparamss))
-    println(tree)
-    tree
-  }
-
-  // NOTE: Order in which this is called seems to depend on what order the code is compiled in.
-  //   If the Range class is transformed before the rest of the code, we will not be able to write
-  //   the specialized methods in the class, since we can't know ahead of time, which ones we need.
-  override def transformTemplate(tree: Template)(implicit ctx: Context, info: TransformerInfo): Tree = {
-    val cls = ctx.owner.asClass
-
-    if (cls == defn.RangeClass) {
-      val body = tree.body.flatMap {
-        case subTree: DefDef if subTree.symbol eq defn.Range_foreach => subTree :: proxyMethod(subTree) :: Nil
-        case subTree => subTree :: Nil
+    private def buildProxySymbol(oldSym: Symbol)(implicit ctx: Context): Symbol = {
+      val proxySym = ctx.newSymbol(
+        oldSym.owner,
+        (oldSym.name ++ ("$proxy" + counter)).asTermName,
+        Synthetic | oldSym.flags,
+        oldSym.info,
+        coord = oldSym.pos
+      )
+      counter += 1
+      methToProxies.get(oldSym) match {
+        case Some(s) => s += proxySym
+        case None => methToProxies += (oldSym -> mutable.Set(proxySym))
       }
-      cpy.Template(tree)(body = body)
-    } else tree
+
+      proxySym
+    }
+
+    override def transformApply(tree: Apply)(implicit ctx: Context, info: TransformerInfo): Tree = {
+      val sym = tree.symbol
+      if (methods contains sym) {
+        def buildApply(tree: Tree): Tree = tree match {
+          case tApply: TypeApply => buildApply(tApply.fun).appliedToTypeTrees(tApply.args)
+          // TODO: Is it possible for this method to be returned from another method?
+          case apply: Apply => buildApply(apply.fun).appliedToArgs(apply.args)
+          case select: Select => select.qualifier.select(buildProxySymbol(sym))
+          // TODO: Figure out Ident case, when necessary
+          case _ =>
+            assert(false, s"Invalid tree of type ${tree.getClass}")
+            EmptyTree
+        }
+
+        buildApply(tree)
+      } else tree
+    }
+
+  }
+
+  class ForOptTransform extends MiniPhaseTransform {
+    override def phaseName: String = "forOptTransform"
+
+    private def proxyMethod(oldSym: Symbol, proxySym: TermSymbol)(implicit ctx: Context): DefDef = {
+      polyDefDef(
+        proxySym,
+        ttypes =>
+          vparamss =>
+            ref(oldSym).appliedToTypes(ttypes).appliedToArgss(vparamss)
+      )
+    }
+
+    override def transformTemplate(tree: Template)(implicit ctx: Context,
+                                                   info: TransformerInfo): Tree = {
+      val cls = ctx.owner.asClass
+
+      if (cls == defn.RangeClass) {
+        val body = tree.body.flatMap {
+          case subTree: DefDef if methods contains subTree.symbol =>
+            methToProxies(subTree.symbol).map(
+              proxyMethod(subTree.symbol, _)).toList ::: subTree :: Nil
+          case subTree => subTree :: Nil
+        }
+        cpy.Template(tree)(body = body)
+      } else tree
+    }
   }
 }
+
