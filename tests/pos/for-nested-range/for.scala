@@ -1,3 +1,5 @@
+package com.wojtechnology
+
 object Test {
 
   def compute(until: Int): Int = {

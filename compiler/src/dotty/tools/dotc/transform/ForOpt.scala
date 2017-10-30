@@ -2,10 +2,11 @@ package dotty.tools.dotc
 
 import dotty.tools.dotc.ast.{TreeTypeMap, tpd}
 import dotty.tools.dotc.core.Contexts._
+import dotty.tools.dotc.core.Decorators._
 import dotty.tools.dotc.core.Flags._
+import dotty.tools.dotc.core.Names._
 import dotty.tools.dotc.core.Symbols._
 import dotty.tools.dotc.core.Types._
-import dotty.tools.dotc.transform.SymUtils._
 import dotty.tools.dotc.transform.TreeTransforms.{MiniPhaseTransform, TransformerInfo}
 
 import scala.collection.immutable
@@ -25,9 +26,19 @@ object ForOpt {
   // List of methods for which we want to create proxy methods
   private def methods(implicit ctx: Context) = immutable.Set(defn.Range_foreach)
 
+  // Only do optimization for specified class names
+  private def whiteListedClassNames(implicit ctx: Context) = immutable.Set(ctx.requiredClassRef("com.wojtechnology.ForOptTest").symbol.asClass)
+
   // Contains map from the method symbol to all proxy symbols
   private val methToProxies = new mutable.HashMap[Symbol, mutable.Set[TermSymbol]]() {
     override def default(key: Symbol) = mutable.Set()
+  }
+
+  private def getPackageSymbol(name: PreName)(implicit ctx: Context): Option[Symbol] = {
+    ctx.base.staticRef(name.toTypeName).symbol match {
+      case NoSymbol => None
+      case x => Some(x)
+    }
   }
 
   // Appended to end of proxy methods to guarantee uniqueness
@@ -54,8 +65,13 @@ object ForOpt {
     }
 
     override def transformSelect(tree: Select)(implicit ctx: Context, info: TransformerInfo): Tree = {
-      if (methods contains tree.symbol) tree.qualifier.select(buildProxySymbol(tree.symbol))
-      else tree
+      val sym = tree.symbol
+      // TODO: how to get corresponding object for a class (i.e. Test$ from Test)
+      if (methods contains sym) getPackageSymbol("com.wojtechnology") match {
+        case Some(x) if x == ctx.owner.enclosingClass.owner =>
+          tree.qualifier.select(buildProxySymbol(tree.symbol))
+        case _ => tree
+      } else tree
     }
 
   }

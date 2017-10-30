@@ -1,3 +1,5 @@
+package com.wojtechnology
+
 object Test {
   def foo(a: Int, b: Int) = {
     a^b
