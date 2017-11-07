@@ -7,10 +7,10 @@
 \*                                                                      */
 
 
-package scala
-package collection.immutable
+package com.wojtechnology.collection
 
 import scala.collection.parallel.immutable.ParRange
+import scala.collection.immutable.NumericRange
 
 /** The `Range` class represents integer values in range
  *  ''[start;end)'' with non-zero step value `step`.
@@ -63,7 +63,6 @@ extends scala.collection.AbstractSeq[Int]
    with scala.collection.CustomParallelizable[Int, ParRange]
    with Serializable
 {
-  override def par = new ParRange(this)
 
   private def gap           = end.toLong - start.toLong
   private def isExact       = gap % step == 0
@@ -484,24 +483,6 @@ object Range {
       NumericRange(start, end, step)
     def inclusive(start: BigDecimal, end: BigDecimal, step: BigDecimal) =
       NumericRange.inclusive(start, end, step)
-  }
-
-  // Double works by using a BigDecimal under the hood for precise
-  // stepping, but mapping the sequence values back to doubles with
-  // .doubleValue.  This constructs the BigDecimals by way of the
-  // String constructor (valueOf) instead of the Double one, which
-  // is necessary to keep 0.3d at 0.3 as opposed to
-  // 0.299999999999999988897769753748434595763683319091796875 or so.
-  object Double {
-    implicit val bigDecAsIntegral: scala.math.Numeric.BigDecimalAsIfIntegral = scala.math.Numeric.BigDecimalAsIfIntegral
-    implicit val doubleAsIntegral: scala.math.Numeric.DoubleAsIfIntegral = scala.math.Numeric.DoubleAsIfIntegral
-    def toBD(x: Double): BigDecimal = scala.math.BigDecimal valueOf x
-
-    def apply(start: Double, end: Double, step: Double) =
-      BigDecimal(toBD(start), toBD(end), toBD(step)) mapRange (_.doubleValue)
-
-    def inclusive(start: Double, end: Double, step: Double) =
-      BigDecimal.inclusive(toBD(start), toBD(end), toBD(step)) mapRange (_.doubleValue)
   }
 
   // As there is no appealing default step size for not-really-integral ranges,

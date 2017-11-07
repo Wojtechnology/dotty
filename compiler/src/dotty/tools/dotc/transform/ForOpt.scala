@@ -5,6 +5,7 @@ import dotty.tools.dotc.core.Contexts._
 import dotty.tools.dotc.core.Decorators._
 import dotty.tools.dotc.core.Flags._
 import dotty.tools.dotc.core.Names._
+import dotty.tools.dotc.core.StdNames._
 import dotty.tools.dotc.core.Symbols._
 import dotty.tools.dotc.core.Types._
 import dotty.tools.dotc.transform.TreeTransforms.{MiniPhaseTransform, TransformerInfo}
@@ -18,27 +19,37 @@ import scala.collection.mutable
 object ForOpt {
   import tpd._
 
-  // List of classes that contain methods in `methods`. Only templates of this class will have
-  // proxy methods rewritten.
-  private def classes(implicit ctx: Context): immutable.Set[ClassSymbol] =
-    immutable.Set(defn.RangeClass)
-
-  // List of methods for which we want to create proxy methods
-  private def methods(implicit ctx: Context) = immutable.Set(defn.Range_foreach)
-
-  // Only do optimization for specified class names
-  private def whiteListedClassNames(implicit ctx: Context) = immutable.Set(ctx.requiredClassRef("com.wojtechnology.ForOptTest").symbol.asClass)
-
-  // Contains map from the method symbol to all proxy symbols
-  private val methToProxies = new mutable.HashMap[Symbol, mutable.Set[TermSymbol]]() {
-    override def default(key: Symbol) = mutable.Set()
-  }
-
-  private def getPackageSymbol(name: PreName)(implicit ctx: Context): Option[Symbol] = {
+  private def getSymbol(name: PreName)(implicit ctx: Context): Option[Symbol] = {
     ctx.base.staticRef(name.toTypeName).symbol match {
       case NoSymbol => None
       case x => Some(x)
     }
+  }
+
+  // List of classes that contain methods in `methods`. Only templates of this class will have
+  // proxy methods rewritten.
+  private def classes(implicit ctx: Context): immutable.Set[ClassSymbol] =
+    getSymbol("com.wojtechnology.collection.Range") match {
+      case Some(x) if x.isClass => immutable.Set(x.asClass)
+      case x => immutable.Set()
+    }
+
+  // List of methods for which we want to create proxy methods
+  private def methods(implicit ctx: Context): immutable.Set[Symbol] = {
+    classes.map(cls => cls.requiredMethodRef(nme.foreach).symbol)
+  }
+
+  // Only do optimization for specified packages
+  private def whitelistedPackages(implicit ctx: Context): immutable.Set[Symbol] = {
+    getSymbol("com.wojtechnology") match {
+      case Some(x) => immutable.Set(x)
+      case None => immutable.Set()
+    }
+  }
+
+  // Contains map from the method symbol to all proxy symbols
+  private val methToProxies = new mutable.HashMap[Symbol, mutable.Set[TermSymbol]]() {
+    override def default(key: Symbol) = mutable.Set()
   }
 
   // Appended to end of proxy methods to guarantee uniqueness
@@ -67,10 +78,8 @@ object ForOpt {
     override def transformSelect(tree: Select)(implicit ctx: Context, info: TransformerInfo): Tree = {
       val sym = tree.symbol
       // TODO: how to get corresponding object for a class (i.e. Test$ from Test)
-      if (methods contains sym) getPackageSymbol("com.wojtechnology") match {
-        case Some(x) if x == ctx.owner.enclosingClass.owner =>
-          tree.qualifier.select(buildProxySymbol(tree.symbol))
-        case _ => tree
+      if (methods.contains(sym) && whitelistedPackages.contains(ctx.owner.enclosingClass.owner)) {
+        tree.qualifier.select(buildProxySymbol(tree.symbol))
       } else tree
     }
 

@@ -1,14 +1,17 @@
 package com.wojtechnology
 
+import com.wojtechnology.collection.Range
+
 object Test {
   def foo(a: Int, b: Int) = {
-    a^b
+    a+b
   }
 
   def compute(until: Int): Int = {
     var s = 0;
-    for (i <- 0 to until)
+    new Range(1, until+1, 1).foreach(i =>
       s = foo(s, i)
+    )
     s
   }
 
