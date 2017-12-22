@@ -85,30 +85,6 @@ object ForOpt {
 
   }
 
-  class EnclosureTransform(newOwner: Symbol) extends MiniPhaseTransform {
-    override def phaseName: String = "enclosureTransform"
-
-    override def transformDefDef(tree: DefDef)(implicit ctx: Context, info: TransformerInfo): Tree = {
-      println(tree)
-      val oldSym = tree.symbol
-      val newSym = ctx.newSymbol(
-        newOwner,
-        oldSym.name.asTermName,
-        oldSym.flags,
-        oldSym.info,
-        coord = oldSym.pos
-      )
-      DefDef(newSym, tree.rhs)
-    }
-
-    override def transformIdent(tree: Ident)(implicit ctx: Context, info: TransformerInfo): Tree = {
-
-      val tr = Ident(TermRef(NoPrefix, tree.symbol.asTerm))
-      println(tr)
-      tr
-    }
-  }
-
   class ForOptTransform extends MiniPhaseTransform {
     override def phaseName: String = "forOptTransform"
 
