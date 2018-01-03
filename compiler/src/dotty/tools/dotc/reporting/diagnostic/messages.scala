@@ -2064,4 +2064,23 @@ object messages {
     val explanation =
       hl"An object that contains ${"@static"} members must have a companion class."
   }
+
+  case class UnapplyInvalidResultType(unapplyResult: Type, unapplyFn: tpd.Tree)(implicit ctx: Context)
+  extends Message(UnapplyInvalidResultTypeID) {
+    val kind = "Type Mismatch"
+    val msg = hl"$unapplyResult is not a valid result type of an ${unapplyFn.symbol.name} method of an extractor"
+    val explanation = {
+      hl"""$unapplyResult is not a valid result type for the ${unapplyFn.symbol.name} method of an extractor.
+          |The return type of an unapply should be chosen as follows:
+          |- if it is just a test, return a Boolean
+          |- if it returns a single sub-value of type T, return an Option[T]
+          |- if you want to return several sub-values T1,...,Tn, group them in an optional tuple
+          |Option[(T1,...,Tn)]
+          |
+          |Sometimes, the number of sub-values isn't fixed and we would like to return a sequence.
+          |For this reason, you can also define patterns through unapplySeq which returns
+          |Option[Seq[T]]. This mechanism is used for instance in pattern case List(x1, ..., xn)."""
+    }
+  }
+
 }

@@ -1277,4 +1277,28 @@ class ErrorMessagesTests extends ErrorMessagesTest {
       val MissingCompanionForStatic(member) = messages.head
       assertEquals(member.show, "method bar")
     }
+
+  @Test def unapplyInvalidResultType =
+    checkMessagesAfter("checkStatic") {
+      """
+        |class User(val name: String)
+        |object User {
+        |  def unapply(u: User) = u.name
+        |  def foo = {
+        |    new User("wojtek") match {
+        |      case User(name) => println("found name")
+        |    }
+        |  }
+        |}
+      """.stripMargin
+    }
+    .expect { (ictx, messages) =>
+      implicit val ctx: Context = ictx
+      val defn = ictx.definitions
+
+      assertMessageCount(1, messages)
+      val UnapplyInvalidResultType(unapplyResult, unapplyFn) :: Nil = messages
+      assert(unapplyResult.dealias =:= defn.StringType, s"result type was: $unapplyResult")
+      assertEquals("method unapply", unapplyFn.symbol.show)
+    }
 }
